@@ -1,2 +1,2 @@
 # JReg
-A minecraft mod by multiloader
+A minecraft mod by NeoForge

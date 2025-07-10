@@ -1,4 +1,4 @@
-package io.github.polaristarsmc;
+package io.github.polaristarsmc.jreg;
 
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -11,11 +11,11 @@ import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
-@Mod(value = jReg.MODID, dist = Dist.CLIENT)
+@Mod(value = JReg.MODID, dist = Dist.CLIENT)
 // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
-@EventBusSubscriber(modid = jReg.MODID, value = Dist.CLIENT)
-public class jRegClient {
-    public jRegClient(ModContainer container) {
+@EventBusSubscriber(modid = JReg.MODID, value = Dist.CLIENT)
+public class JRegClient {
+    public JRegClient(ModContainer container) {
         // Allows NeoForge to create a config screen for this mod's configs.
         // The config screen is accessed by going to the Mods screen > clicking on your mod > clicking on config.
         // Do not forget to add translations for your config options to the en_us.json file.
@@ -25,7 +25,7 @@ public class jRegClient {
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
         // Some client setup code
-        jReg.LOGGER.info("HELLO FROM CLIENT SETUP");
-        jReg.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        JReg.LOGGER.info("HELLO FROM CLIENT SETUP");
+        JReg.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
     }
 }
