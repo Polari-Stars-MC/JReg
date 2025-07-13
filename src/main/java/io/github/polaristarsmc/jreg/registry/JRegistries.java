@@ -1,32 +1,36 @@
 package io.github.polaristarsmc.jreg.registry;
 
-import com.google.common.base.Function;
+import io.github.polaristarsmc.jreg.registry.data.ClientProvider;
+import io.github.polaristarsmc.jreg.registry.data.ServerProvider;
+import io.github.polaristarsmc.jreg.registry.entry.ItemEntry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.data.DataGenerator;
+import net.minecraft.data.PackOutput;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.data.event.GatherDataEvent;
+import net.neoforged.neoforge.data.loading.DatagenModLoader;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Stream;
+import java.util.function.Function;
 
 /**
  * @author baka4n
  * @code @Date 2025/7/10 13:31:51
  */
-public class JRegistries implements AutoCloseable {
+public class JRegistries<P extends JRegistries<P>> {
+    public final ClientProvider<P> langs = new ClientProvider<>(self());
+    public final ServerProvider<P> servers = new ServerProvider<>(self());
+
     // multi-thread support
     public final ConcurrentHashMap<ResourceKey<? extends Registry<?>>, DeferredRegister<?>> registries = new ConcurrentHashMap<>();
     public final String modid;
-    private final ExecutorService executor;
+    public final IEventBus modBus, forgeBus;
 
     public DeferredRegister.Items items() {
         if (registries.containsKey(Registries.ITEM)) {
@@ -37,37 +41,52 @@ public class JRegistries implements AutoCloseable {
         return items;
     }
 
-    public <T extends Item> DeferredItem<T> item(String name, Function<Item.Properties, T> function) {
-        return items().registerItem(name, function);
+
+    public JRegistries(String modid, IEventBus modBus) {
+        this.modid = modid;
+        this.modBus = modBus;
+        this.forgeBus = NeoForge.EVENT_BUS;
     }
-
-    public <T extends Item> List<DeferredItem<T>> items(Function<Item.Properties, T> function, String... names) {
-        CompletableFuture<DeferredItem<T>>[] futures = new CompletableFuture[names.length];
-
-        DeferredRegister.Items items = items();
-        for (int i = 0; i < names.length; i++) {
-            int finalI = i;
-            futures[i] = CompletableFuture.supplyAsync(() -> items.registerItem(names[finalI], function), executor);
-        }
-        CompletableFuture.allOf(futures);
-        return Arrays.stream(futures).map(CompletableFuture::join).toList();
-    }
-
-
     public JRegistries(String modid) {
         this.modid = modid;
-        executor = Executors.newVirtualThreadPerTaskExecutor();
+        var modContainerById = ModList.get().getModContainerById(modid).orElse(null);
+        if (modContainerById == null)
+            throw new IllegalArgumentException("Faild to get mod container by id " + modid);
+        this.modBus = modContainerById.getEventBus();
+        this.forgeBus = NeoForge.EVENT_BUS;
     }
 
-    public void registerAll(IEventBus modEventBus) {
+    public <T extends Item> ItemEntry<T, P, ?> item(String name, Function<Item.Properties, T> function) {
+        return new ItemEntry<>(name, function, self());
+    }
+
+
+    public P registerAll() {
         for (DeferredRegister<?> register : registries.values()) {
-            executor.submit(() -> register.register(modEventBus));
+            register.register(modBus);
         }
-        close();
+        if (DatagenModLoader.isRunningDataGen()) {
+            modBus.addListener(GatherDataEvent.class, event -> {
+                DataGenerator generator = event.getGenerator();
+                PackOutput packOutput = generator.getPackOutput();
+                generator.addProvider(event.includeClient(), langs.setOutput(packOutput));
+                generator.addProvider(event.includeServer(), servers.setOutput(packOutput).setExFileHelper(event.getExistingFileHelper()));
+            });
+        }
+        return self();
     }
 
-    @Override
-    public void close() {
-        executor.shutdown();
+    public P init(Class<?>... classes) {
+        for (Class<?> clazz : classes) {
+            try {
+                Class.forName(clazz.getName());
+            } catch (ClassNotFoundException ignored) {}
+        }
+        return self();
+    }
+
+    @SuppressWarnings("unchecked")
+    public P self() {
+        return (P) this;
     }
 }
