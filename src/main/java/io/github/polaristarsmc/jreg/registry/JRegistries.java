@@ -2,6 +2,7 @@ package io.github.polaristarsmc.jreg.registry;
 
 import io.github.polaristarsmc.jreg.registry.data.ClientProvider;
 import io.github.polaristarsmc.jreg.registry.data.ServerProvider;
+import io.github.polaristarsmc.jreg.registry.entry.BlockEntry;
 import io.github.polaristarsmc.jreg.registry.entry.ItemEntry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -9,13 +10,18 @@ import net.minecraft.data.DataGenerator;
 import net.minecraft.data.PackOutput;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.data.ExistingFileHelper;
 import net.neoforged.neoforge.data.event.GatherDataEvent;
 import net.neoforged.neoforge.data.loading.DatagenModLoader;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -24,11 +30,11 @@ import java.util.function.Function;
  * @code @Date 2025/7/10 13:31:51
  */
 public class JRegistries<P extends JRegistries<P>> {
-    public final ClientProvider<P> langs = new ClientProvider<>(self());
+    public final ClientProvider<P> clients = new ClientProvider<>(self());
     public final ServerProvider<P> servers = new ServerProvider<>(self());
 
     // multi-thread support
-    public final ConcurrentHashMap<ResourceKey<? extends Registry<?>>, DeferredRegister<?>> registries = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<ResourceKey<? extends Registry<?>>, DeferredRegister<?>> registries = new ConcurrentHashMap<>();
     public final String modid;
     public final IEventBus modBus, forgeBus;
 
@@ -41,6 +47,25 @@ public class JRegistries<P extends JRegistries<P>> {
         return items;
     }
 
+    @SuppressWarnings("unchecked")
+    public DeferredRegister<BlockEntityType<?>> be() {
+        if (registries.containsKey(Registries.BLOCK_ENTITY_TYPE)) {
+            return (DeferredRegister<BlockEntityType<?>>) registries.get(Registries.BLOCK_ENTITY_TYPE);
+        }
+        var be = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, modid);
+        registries.put(Registries.BLOCK_ENTITY_TYPE, be);
+        return be;
+    }
+
+    public DeferredRegister.Blocks blocks() {
+        if (registries.containsKey(Registries.BLOCK)) {
+            return (DeferredRegister.Blocks) registries.get(Registries.BLOCK);
+        }
+        DeferredRegister.Blocks blocks = DeferredRegister.createBlocks(modid);
+        registries.put(Registries.BLOCK, blocks);
+        return blocks;
+    }
+
 
     public JRegistries(String modid, IEventBus modBus) {
         this.modid = modid;
@@ -48,19 +73,18 @@ public class JRegistries<P extends JRegistries<P>> {
         this.forgeBus = NeoForge.EVENT_BUS;
     }
     public JRegistries(String modid) {
-        this.modid = modid;
-        var modContainerById = ModList.get().getModContainerById(modid).orElse(null);
-        if (modContainerById == null)
-            throw new IllegalArgumentException("Faild to get mod container by id " + modid);
-        this.modBus = modContainerById.getEventBus();
-        this.forgeBus = NeoForge.EVENT_BUS;
+        this(modid, Objects.requireNonNull(ModList.get().getModContainerById(modid).orElse(null)).getEventBus());
     }
 
     public <T extends Item> ItemEntry<T, P, ?> item(String name, Function<Item.Properties, T> function) {
-        return new ItemEntry<>(name, function, self());
+        return ItemEntry.item(name, function, self());
+    }
+    public <T extends Block> BlockEntry<T, P, ?> block(String name, Function<BlockBehaviour.Properties, T> function) {
+        return new BlockEntry<>(name, function, self());
     }
 
 
+    @SuppressWarnings("UnusedReturnValue")
     public P registerAll() {
         for (DeferredRegister<?> register : registries.values()) {
             register.register(modBus);
@@ -69,8 +93,9 @@ public class JRegistries<P extends JRegistries<P>> {
             modBus.addListener(GatherDataEvent.class, event -> {
                 DataGenerator generator = event.getGenerator();
                 PackOutput packOutput = generator.getPackOutput();
-                generator.addProvider(event.includeClient(), langs.setOutput(packOutput));
-                generator.addProvider(event.includeServer(), servers.setOutput(packOutput).setExFileHelper(event.getExistingFileHelper()));
+                ExistingFileHelper existingFileHelper = event.getExistingFileHelper();
+                generator.addProvider(event.includeClient(), clients.setOutput(packOutput).setExFileHelper(existingFileHelper));
+                generator.addProvider(event.includeServer(), servers.setOutput(packOutput).setExFileHelper(existingFileHelper));
             });
         }
         return self();
